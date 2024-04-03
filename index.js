@@ -47,35 +47,44 @@ app.get('/api/users', function(req,res) {
   });
 });
 
-app.get('/api/users/:id/logs', function(req,res) {
-  let userIdParam = req.params.id;
-  let dbUserName = "";
-  let ExeCount = 0;
-  User.find({_id: userIdParam})
-  .then(function(dbUser) {
-    dbUserName = dbUser.username;
-  })
-  .catch(function(err) {
-    console.log(err);
-  });
-  Exercise.countDocuments({userId: userIdParam})
-  .then(function(count) {
-    ExeCount = count;
-  })
-  .catch(function(err) {
-    console.log(err);
-  });
-  Exercise.find({userId: userIdParam}).select({"username":0, "_id": 0})
-  .then(function(exercises) {
-    res.json({username: dbUserName,
-              count: ExeCount,
-              _id: userIdParam,
-              log: exercises});
-  })
-  .catch(function(err) {
-    console.log(err);
-  });
+app.get('/api/users/:_id/logs', async function (req, res) {
+	const userId = req.params._id;
+	const from = req.query.from || new Date(0).toISOString().substring(0, 10);
+	const to =
+		req.query.to || new Date(Date.now()).toISOString().substring(0, 10);
+	const limit = Number(req.query.limit) || 0;
+
+	let user = await User.findById(userId).exec();
+
+	console.log(
+		'looking for exercises with id ['.toLocaleUpperCase() + userId + '] ...'
+	);
+
+	//? Find the exercises
+	let exercises = await Exercise.find({
+		userId: userId,
+		date: { $gte: from, $lte: to },
+	})
+		.select('description duration date')
+		.limit(limit)
+		.exec();
+
+	let parsedDatesLog = exercises.map((exercise) => {
+		return {
+			description: exercise.description,
+			duration: exercise.duration,
+			date: new Date(exercise.date).toDateString(),
+		};
+	});
+
+	res.json({
+		_id: user._id,
+		username: user.username,
+		count: parsedDatesLog.length,
+		log: parsedDatesLog,
+	});
 });
+
 
 // POST requests
 app.post('/api/users', function(req,res) {
@@ -93,9 +102,9 @@ app.post('/api/users/:id/exercises', function(req,res) {
   let userId = req.params.id;
   let desc = req.body.description;
   let dur = req.body.duration;
-  let date = req.body.date;
+  let date = new Date(req.body.date);
   if(!date) {
-    date = new Date().toDateString();
+    date = new Date();
   }
   User.findById(userId)
   .then(function(dbUser) {
@@ -104,14 +113,14 @@ app.post('/api/users/:id/exercises', function(req,res) {
       username: dbUser.username,
       description: desc,
       duration: parseInt(dur),
-      date: date
+      date: date.toDateString()
     });
     newExercise.save()
     .then(function(Exercise) {
       res.json({
         username: Exercise.username,
         description: Exercise.description,
-        duration: Exercise.duration,
+        duration: parseInt(Exercise.duration),
         date: Exercise.date,
         _id: Exercise.userId
       });
